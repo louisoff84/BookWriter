@@ -10,16 +10,35 @@
     set token(v) { v ? sessionStorage.setItem(TOKEN_KEY, v) : sessionStorage.removeItem(TOKEN_KEY); }
   };
 
+  function apiUrl(path) {
+    const raw = String(path || '').replace(/^\/+/, '');
+
+    // Les vrais fichiers PHP sont appelés directement.
+    if (/^[^?]+\.php(?:\?|$)/i.test(raw)) {
+      return `${API_BASE}/${raw}`;
+    }
+
+    // Toutes les routes JSON passent par api.php : aucun .htaccess requis.
+    const [route, query = ''] = raw.split('?', 2);
+    const url = new URL(`${API_BASE}/api.php`);
+    url.searchParams.set('route', route);
+    if (query) {
+      const params = new URLSearchParams(query);
+      params.forEach((value, key) => url.searchParams.append(key, value));
+    }
+    return url.toString();
+  }
+
   async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
     if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     if (auth.token) headers.set('Authorization', `Bearer ${auth.token}`);
-    const response = await fetch(`${API_BASE}/${String(path).replace(/^\/+/, '')}`, {...options, headers, credentials: 'omit'});
+    const response = await fetch(apiUrl(path), {...options, headers, credentials: 'omit'});
     const text = await response.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch { data = {error: text || `Erreur HTTP ${response.status}`}; }
     if (!response.ok) {
-      if (response.status === 401 && !String(path).startsWith('auth/login')) auth.token = '';
+      if (response.status === 401) auth.token = '';
       const error = new Error(data.error || `Erreur HTTP ${response.status}`);
       error.status = response.status; error.data = data; throw error;
     }
@@ -105,6 +124,6 @@
     headerAuth();
   }
 
-  window.BW = {config, API_BASE, $, $$, auth, api, toast, loading, getMe, requireUser, redirectLogin, cover, bookCard};
+  window.BW = {config, API_BASE, $, $$, auth, api, apiUrl, toast, loading, getMe, requireUser, redirectLogin, cover, bookCard};
   setup();
 })();
