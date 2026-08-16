@@ -5,9 +5,11 @@ BookWriter est un site pour écrire, importer et publier des livres.
 ## Architecture
 
 - **Frontend GitHub Pages** : HTML, CSS et JavaScript natifs, sans Bootstrap.
-- **Backend PHP** : `/api/`, hébergé séparément sur Plesk.
+- **Backend PHP** : code source dans `/api/`, hébergé séparément sur Plesk à la racine du domaine.
 - **Base de données** : SQLite par défaut (`storage/bookwriter.sqlite`).
 - **Google Drive** : OAuth 2.0 en lecture seule pour importer Google Docs, TXT et Markdown.
+
+Le frontend GitHub Pages ne contient pas le backend. Il appelle l’API distante via `fetch()`.
 
 ## Pages frontend
 
@@ -24,9 +26,16 @@ L’URL de l’API est centralisée dans `assets/config.js`.
 
 ## API PHP
 
-Base prévue :
+Base utilisée par le frontend :
 
-`https://condescending-driscoll.82-26-80-25.plesk.page/api`
+`https://condescending-driscoll.82-26-80-25.plesk.page`
+
+Exemples :
+
+- `GET https://condescending-driscoll.82-26-80-25.plesk.page/health`
+- `POST https://condescending-driscoll.82-26-80-25.plesk.page/auth/login`
+- `GET https://condescending-driscoll.82-26-80-25.plesk.page/public/books`
+- `POST https://condescending-driscoll.82-26-80-25.plesk.page/books`
 
 Routes principales :
 
@@ -50,7 +59,20 @@ Routes principales :
 
 ## Déploiement Plesk
 
-Copier le dossier `api/` dans le document root du domaine Plesk et créer un dossier `storage/` accessible en écriture par PHP. Le serveur PHP doit avoir `PDO` + `pdo_sqlite` et `cURL` activés.
+Le dossier `api/` est le **code source du backend** dans le repo. Pour l’hébergement Plesk, copie **le contenu de `api/` directement dans le document root** de `condescending-driscoll.82-26-80-25.plesk.page`.
+
+Exemple de document root Plesk :
+
+```text
+httpdocs/
+├── index.php
+├── init.php
+├── google-connect-url.php
+├── .htaccess
+└── storage/
+```
+
+Le dossier `storage/` doit être accessible en écriture par PHP. Le serveur doit avoir `PDO`, `pdo_sqlite` et `cURL` activés.
 
 Variables d’environnement recommandées (voir `api/.env.example`) :
 
@@ -63,7 +85,9 @@ GOOGLE_CLIENT_SECRET=...
 APP_DEBUG=0
 ```
 
-Dans Google Cloud, ajouter comme URI de redirection OAuth :
+Le routeur PHP accepte les routes directement à la racine du domaine. L’ancien préfixe `/api/` reste compatible pour le callback OAuth existant si nécessaire.
+
+Dans Google Cloud, l’URI OAuth actuellement compatible est :
 
 `https://condescending-driscoll.82-26-80-25.plesk.page/api/google/callback`
 
