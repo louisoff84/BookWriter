@@ -10,7 +10,7 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ router.php [QSA,L]
 
-<FilesMatch "^(init|env-loader|router)\.php$">
+<FilesMatch "^(init|env-loader)\.php$">
     Require all denied
 </FilesMatch>
 
