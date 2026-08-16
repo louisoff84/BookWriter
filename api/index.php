@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/bootstrap.php';
+require __DIR__ . '/init.php';
+
+header('Access-Control-Allow-Origin: ' . bw_config()['cors_origin']);
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
 
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 if ($method === 'OPTIONS') {
@@ -15,7 +19,7 @@ $path = preg_replace('#^/api(?:/index\.php)?#', '', $uriPath) ?? '';
 $path = trim($path, '/');
 
 try {
-    if ($method === 'GET' && $path === 'health') {
+    if ($method === 'GET' && ($path === '' || $path === 'health')) {
         bw_json([
             'success' => true,
             'service' => 'BookWriter API',
@@ -41,11 +45,8 @@ try {
             bw_error('Le nom doit contenir entre 2 et 50 caractères.', 422);
         }
 
-        $pdo = bw_db();
         try {
-            $stmt = $pdo->prepare(
-                'INSERT INTO users (email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?)'
-            );
+            $stmt = bw_db()->prepare('INSERT INTO users (email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?)');
             $stmt->execute([$email, password_hash($password, PASSWORD_DEFAULT), $displayName, bw_now()]);
         } catch (PDOException $e) {
             if (str_contains(strtolower($e->getMessage()), 'unique')) {
@@ -56,7 +57,7 @@ try {
 
         bw_boot_session();
         session_regenerate_id(true);
-        $_SESSION['user_id'] = (int)$pdo->lastInsertId();
+        $_SESSION['user_id'] = (int)bw_db()->lastInsertId();
         $user = bw_current_user();
         bw_json(['success' => true, 'user' => bw_user_public($user)], 201);
     }
@@ -82,10 +83,6 @@ try {
     if ($method === 'POST' && $path === 'auth/logout') {
         bw_boot_session();
         $_SESSION = [];
-        if (ini_get('session.use_cookies')) {
-            $params = session_get_cookie_params();
-            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'] ?? '', $params['secure'], $params['httponly']);
-        }
         session_destroy();
         bw_json(['success' => true]);
     }
@@ -99,32 +96,29 @@ try {
         ]);
     }
 
-    if ($path === 'books' && $method === 'GET') {
+    if ($method === 'GET' && $path === 'books') {
         $user = bw_require_user();
         $stmt = bw_db()->prepare('SELECT * FROM books WHERE user_id = ? ORDER BY updated_at DESC');
         $stmt->execute([(int)$user['id']]);
-        $books = array_map(fn(array $book) => bw_book_payload($book, false), $stmt->fetchAll());
+        $books = array_map(fn(array $book): array => bw_book_payload($book, false), $stmt->fetchAll());
         bw_json(['success' => true, 'books' => $books]);
     }
 
-    if ($path === 'books' && $method === 'POST') {
+    if ($method === 'POST' && $path === 'books') {
         $user = bw_require_user();
         $body = bw_body();
         $title = trim((string)($body['title'] ?? 'Nouveau livre'));
-        if ($title === '' || mb_strlen($title) > 150) {
-            bw_error('Le titre doit contenir entre 1 et 150 caractères.', 422);
-        }
-
         $description = trim((string)($body['description'] ?? ''));
         $content = (string)($body['content'] ?? '');
         $coverUrl = trim((string)($body['cover_url'] ?? ''));
-        $now = bw_now();
-        $slug = bw_unique_slug($title);
 
-        $stmt = bw_db()->prepare(
-            'INSERT INTO books (user_id, title, slug, description, content, cover_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        $stmt->execute([(int)$user['id'], $title, $slug, $description, $content, $coverUrl, 'draft', $now, $now]);
+        if ($title === '' || mb_strlen($title) > 150) {
+            bw_error('Titre invalide.', 422);
+        }
+
+        $now = bw_now();
+        $stmt = bw_db()->prepare('INSERT INTO books (user_id, title, slug, description, content, cover_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([(int)$user['id'], $title, bw_unique_slug($title), $description, $content, $coverUrl, 'draft', $now, $now]);
         $book = bw_book_for_owner((int)bw_db()->lastInsertId(), (int)$user['id']);
         bw_json(['success' => true, 'book' => bw_book_payload($book)], 201);
     }
@@ -141,21 +135,18 @@ try {
         if ($method === 'PATCH') {
             $body = bw_body();
             $title = array_key_exists('title', $body) ? trim((string)$body['title']) : $book['title'];
-            if ($title === '' || mb_strlen($title) > 150) {
-                bw_error('Le titre doit contenir entre 1 et 150 caractères.', 422);
-            }
-
             $description = array_key_exists('description', $body) ? trim((string)$body['description']) : $book['description'];
             $content = array_key_exists('content', $body) ? (string)$body['content'] : $book['content'];
             $coverUrl = array_key_exists('cover_url', $body) ? trim((string)$body['cover_url']) : $book['cover_url'];
-            $slug = $title !== $book['title'] ? bw_unique_slug($title, $bookId) : $book['slug'];
 
-            $stmt = bw_db()->prepare(
-                'UPDATE books SET title = ?, slug = ?, description = ?, content = ?, cover_url = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-            );
+            if ($title === '' || mb_strlen($title) > 150) {
+                bw_error('Titre invalide.', 422);
+            }
+
+            $slug = $title !== $book['title'] ? bw_unique_slug($title, $bookId) : $book['slug'];
+            $stmt = bw_db()->prepare('UPDATE books SET title = ?, slug = ?, description = ?, content = ?, cover_url = ?, updated_at = ? WHERE id = ? AND user_id = ?');
             $stmt->execute([$title, $slug, $description, $content, $coverUrl, bw_now(), $bookId, (int)$user['id']]);
-            $updated = bw_book_for_owner($bookId, (int)$user['id']);
-            bw_json(['success' => true, 'book' => bw_book_payload($updated)]);
+            bw_json(['success' => true, 'book' => bw_book_payload(bw_book_for_owner($bookId, (int)$user['id']))]);
         }
 
         if ($method === 'DELETE') {
@@ -165,39 +156,31 @@ try {
         }
     }
 
-    if ($method === 'POST' && preg_match('#^books/(\d+)/publish$#', $path, $matches)) {
+    if ($method === 'POST' && preg_match('#^books/(\d+)/(publish|unpublish)$#', $path, $matches)) {
         $user = bw_require_user();
         $bookId = (int)$matches[1];
+        $action = $matches[2];
         $book = bw_book_for_owner($bookId, (int)$user['id']);
-        if (trim($book['content']) === '') {
-            bw_error('Ajoute du contenu avant de publier le livre.', 422);
-        }
-        $now = bw_now();
-        $stmt = bw_db()->prepare(
-            "UPDATE books SET status = 'published', published_at = COALESCE(published_at, ?), updated_at = ? WHERE id = ? AND user_id = ?"
-        );
-        $stmt->execute([$now, $now, $bookId, (int)$user['id']]);
-        $updated = bw_book_for_owner($bookId, (int)$user['id']);
-        bw_json(['success' => true, 'book' => bw_book_payload($updated)]);
-    }
 
-    if ($method === 'POST' && preg_match('#^books/(\d+)/unpublish$#', $path, $matches)) {
-        $user = bw_require_user();
-        $bookId = (int)$matches[1];
-        bw_book_for_owner($bookId, (int)$user['id']);
-        $stmt = bw_db()->prepare(
-            "UPDATE books SET status = 'draft', updated_at = ? WHERE id = ? AND user_id = ?"
-        );
-        $stmt->execute([bw_now(), $bookId, (int)$user['id']]);
-        $updated = bw_book_for_owner($bookId, (int)$user['id']);
-        bw_json(['success' => true, 'book' => bw_book_payload($updated)]);
+        if ($action === 'publish' && trim($book['content']) === '') {
+            bw_error('Ajoute du contenu avant de publier.', 422);
+        }
+
+        if ($action === 'publish') {
+            $now = bw_now();
+            $stmt = bw_db()->prepare("UPDATE books SET status = 'published', published_at = COALESCE(published_at, ?), updated_at = ? WHERE id = ? AND user_id = ?");
+            $stmt->execute([$now, $now, $bookId, (int)$user['id']]);
+        } else {
+            $stmt = bw_db()->prepare("UPDATE books SET status = 'draft', updated_at = ? WHERE id = ? AND user_id = ?");
+            $stmt->execute([bw_now(), $bookId, (int)$user['id']]);
+        }
+
+        bw_json(['success' => true, 'book' => bw_book_payload(bw_book_for_owner($bookId, (int)$user['id']))]);
     }
 
     if ($method === 'GET' && $path === 'public/books') {
         $limit = max(1, min(100, (int)($_GET['limit'] ?? 30)));
-        $stmt = bw_db()->prepare(
-            "SELECT b.*, u.display_name AS author_name FROM books b JOIN users u ON u.id = b.user_id WHERE b.status = 'published' ORDER BY b.published_at DESC LIMIT ?"
-        );
+        $stmt = bw_db()->prepare("SELECT b.*, u.display_name AS author_name FROM books b JOIN users u ON u.id = b.user_id WHERE b.status = 'published' ORDER BY b.published_at DESC LIMIT ?");
         $stmt->bindValue(1, $limit, PDO::PARAM_INT);
         $stmt->execute();
         $books = array_map(function (array $book): array {
@@ -209,9 +192,7 @@ try {
     }
 
     if ($method === 'GET' && preg_match('#^public/books/([a-z0-9-]+)$#', $path, $matches)) {
-        $stmt = bw_db()->prepare(
-            "SELECT b.*, u.display_name AS author_name FROM books b JOIN users u ON u.id = b.user_id WHERE b.slug = ? AND b.status = 'published' LIMIT 1"
-        );
+        $stmt = bw_db()->prepare("SELECT b.*, u.display_name AS author_name FROM books b JOIN users u ON u.id = b.user_id WHERE b.slug = ? AND b.status = 'published' LIMIT 1");
         $stmt->execute([$matches[1]]);
         $book = $stmt->fetch();
         if (!$book) {
@@ -222,18 +203,14 @@ try {
         bw_json(['success' => true, 'book' => $payload]);
     }
 
-    if ($path === 'keys' && $method === 'GET') {
+    if ($method === 'GET' && $path === 'keys') {
         $user = bw_require_user();
         $stmt = bw_db()->prepare('SELECT id, name, key_prefix, created_at, last_used_at FROM api_keys WHERE user_id = ? ORDER BY id DESC');
         $stmt->execute([(int)$user['id']]);
-        $keys = array_map(function (array $key): array {
-            $key['id'] = (int)$key['id'];
-            return $key;
-        }, $stmt->fetchAll());
-        bw_json(['success' => true, 'keys' => $keys]);
+        bw_json(['success' => true, 'keys' => $stmt->fetchAll()]);
     }
 
-    if ($path === 'keys' && $method === 'POST') {
+    if ($method === 'POST' && $path === 'keys') {
         $user = bw_require_user();
         $body = bw_body();
         $name = trim((string)($body['name'] ?? 'Ma clé API'));
@@ -242,12 +219,8 @@ try {
         }
 
         $rawKey = 'bw_' . bin2hex(random_bytes(24));
-        $hash = hash('sha256', $rawKey);
-        $prefix = substr($rawKey, 0, 11) . '…';
-        $stmt = bw_db()->prepare(
-            'INSERT INTO api_keys (user_id, name, key_hash, key_prefix, created_at) VALUES (?, ?, ?, ?, ?)'
-        );
-        $stmt->execute([(int)$user['id'], $name, $hash, $prefix, bw_now()]);
+        $stmt = bw_db()->prepare('INSERT INTO api_keys (user_id, name, key_hash, key_prefix, created_at) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([(int)$user['id'], $name, hash('sha256', $rawKey), substr($rawKey, 0, 11) . '…', bw_now()]);
         bw_json([
             'success' => true,
             'api_key' => $rawKey,
@@ -269,10 +242,10 @@ try {
         $user = bw_require_user();
         bw_boot_session();
         if (!bw_google_ready()) {
-            bw_error('Configure GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET avant de connecter Drive.', 503);
+            bw_error('Configure GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET.', 503);
         }
         if (bw_bearer_token() !== null) {
-            bw_error('La connexion Google Drive doit être lancée depuis une session navigateur.', 400);
+            bw_error('L OAuth Google doit être lancé depuis le navigateur.', 400);
         }
 
         $_SESSION['google_oauth_state'] = bin2hex(random_bytes(24));
@@ -293,7 +266,12 @@ try {
 
     if ($method === 'GET' && $path === 'google/callback') {
         bw_boot_session();
-        $user = bw_require_user();
+        $user = bw_current_user();
+        if (!$user) {
+            header('Location: /auth.php?action=login', true, 302);
+            exit;
+        }
+
         $state = (string)($_GET['state'] ?? '');
         $expected = (string)($_SESSION['google_oauth_state'] ?? '');
         unset($_SESSION['google_oauth_state']);
@@ -301,7 +279,7 @@ try {
             bw_error('État OAuth Google invalide.', 400);
         }
         if (!empty($_GET['error'])) {
-            header('Location: /?google=denied', true, 302);
+            header('Location: /drive.php?google=denied', true, 302);
             exit;
         }
 
@@ -318,22 +296,20 @@ try {
             'redirect_uri' => bw_google_redirect_uri(),
             'grant_type' => 'authorization_code',
         ]);
-        $response = bw_http('POST', 'https://oauth2.googleapis.com/token', [
-            'Content-Type: application/x-www-form-urlencoded',
-        ], $payload);
+        $response = bw_http('POST', 'https://oauth2.googleapis.com/token', ['Content-Type: application/x-www-form-urlencoded'], $payload);
         $json = json_decode($response['body'], true);
         if ($response['status'] >= 400 || !is_array($json) || empty($json['access_token'])) {
             bw_error('Impossible de connecter Google Drive.', 502);
         }
 
-        $access = (string)$json['access_token'];
-        $refresh = (string)($json['refresh_token'] ?? ($user['google_refresh_token'] ?? ''));
-        $expires = time() + (int)($json['expires_in'] ?? 3600);
-        $stmt = bw_db()->prepare(
-            'UPDATE users SET google_access_token = ?, google_refresh_token = ?, google_token_expires_at = ? WHERE id = ?'
-        );
-        $stmt->execute([$access, $refresh, $expires, (int)$user['id']]);
-        header('Location: /?google=connected', true, 302);
+        $stmt = bw_db()->prepare('UPDATE users SET google_access_token = ?, google_refresh_token = ?, google_token_expires_at = ? WHERE id = ?');
+        $stmt->execute([
+            (string)$json['access_token'],
+            (string)($json['refresh_token'] ?? ($user['google_refresh_token'] ?? '')),
+            time() + (int)($json['expires_in'] ?? 3600),
+            (int)$user['id'],
+        ]);
+        header('Location: /drive.php?google=connected', true, 302);
         exit;
     }
 
@@ -359,52 +335,32 @@ try {
             bw_error('Identifiant Google Drive invalide.', 422);
         }
 
-        $metadataUrl = 'https://www.googleapis.com/drive/v3/files/' . rawurlencode($fileId)
-            . '?fields=id,name,mimeType,size,modifiedTime';
-        $metadataResponse = bw_google_api($user, $metadataUrl);
+        $metadataResponse = bw_google_api($user, 'https://www.googleapis.com/drive/v3/files/' . rawurlencode($fileId) . '?fields=id,name,mimeType');
         $metadata = json_decode($metadataResponse['body'], true);
         if (!is_array($metadata) || empty($metadata['name']) || empty($metadata['mimeType'])) {
-            bw_error('Métadonnées Google Drive invalides.', 502);
+            bw_error('Fichier Google Drive invalide.', 422);
         }
 
         $mime = (string)$metadata['mimeType'];
         if ($mime === 'application/vnd.google-apps.document') {
-            $contentUrl = 'https://www.googleapis.com/drive/v3/files/' . rawurlencode($fileId)
-                . '/export?mimeType=' . rawurlencode('text/plain');
+            $contentResponse = bw_google_api($user, 'https://www.googleapis.com/drive/v3/files/' . rawurlencode($fileId) . '/export?mimeType=' . rawurlencode('text/plain'));
         } elseif (in_array($mime, ['text/plain', 'text/markdown'], true)) {
-            $contentUrl = 'https://www.googleapis.com/drive/v3/files/' . rawurlencode($fileId) . '?alt=media';
+            $contentResponse = bw_google_api($user, 'https://www.googleapis.com/drive/v3/files/' . rawurlencode($fileId) . '?alt=media');
         } else {
-            bw_error('Format non pris en charge. Utilise Google Docs, TXT ou Markdown.', 415);
+            bw_error('Type de fichier non pris en charge.', 422);
         }
 
-        $contentResponse = bw_google_api($user, $contentUrl);
-        $content = $contentResponse['body'];
-        if (strlen($content) > 5 * 1024 * 1024) {
-            bw_error('Le document dépasse la limite de 5 Mo.', 413);
-        }
-
-        $name = (string)$metadata['name'];
-        $title = preg_replace('/\.(txt|md|markdown)$/i', '', $name) ?: $name;
-        $title = trim(mb_substr($title, 0, 150));
-        $slug = bw_unique_slug($title);
+        $title = trim((string)$metadata['name']);
+        $title = preg_replace('/\.(txt|md|markdown)$/i', '', $title) ?: $title;
         $now = bw_now();
-        $stmt = bw_db()->prepare(
-            'INSERT INTO books (user_id, title, slug, description, content, cover_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        $stmt->execute([(int)$user['id'], $title, $slug, 'Importé depuis Google Drive', $content, '', 'draft', $now, $now]);
+        $stmt = bw_db()->prepare('INSERT INTO books (user_id, title, slug, description, content, cover_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([(int)$user['id'], $title, bw_unique_slug($title), 'Importé depuis Google Drive', $contentResponse['body'], '', 'draft', $now, $now]);
         $book = bw_book_for_owner((int)bw_db()->lastInsertId(), (int)$user['id']);
         bw_json(['success' => true, 'book' => bw_book_payload($book)], 201);
     }
 
-    bw_error('Route API introuvable.', 404, ['path' => '/api/' . $path]);
+    bw_error('Route API introuvable.', 404, ['path' => $path]);
 } catch (Throwable $e) {
-    if (!is_dir(BW_STORAGE)) {
-        @mkdir(BW_STORAGE, 0775, true);
-    }
-    @file_put_contents(
-        BW_STORAGE . '/api.log',
-        '[' . bw_now() . '] ' . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n",
-        FILE_APPEND
-    );
+    error_log('BookWriter API: ' . $e->getMessage());
     bw_error('Erreur interne du serveur.', 500);
 }
