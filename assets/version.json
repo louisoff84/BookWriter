@@ -1,0 +1,6 @@
+{
+  "name": "BookWriter Frontend",
+  "version": "0.1.0",
+  "mode": "api-first",
+  "backend": "https://condescending-driscoll.82-26-80-25.plesk.page/api"
+}
