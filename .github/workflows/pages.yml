@@ -1,10 +1,10 @@
-name: Deploy BookWriter to GitHub Pages
+name: Deploy BookWriter frontend to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - 'index.html'
+      - '*.html'
       - 'assets/**'
       - '.nojekyll'
       - '.github/workflows/pages.yml'
@@ -28,20 +28,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build static Pages directory
+
+      - name: Build frontend-only directory
         run: |
           mkdir -p dist
-          cp index.html dist/index.html
+          cp ./*.html dist/
           cp -R assets dist/assets
           touch dist/.nojekyll
-      - name: Configure and enable Pages
+
+      - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload frontend only
+
+      - name: Upload frontend
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
