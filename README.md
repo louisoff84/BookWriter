@@ -6,10 +6,11 @@ BookWriter est un site pour écrire, importer et publier des livres.
 
 - **Frontend GitHub Pages** : HTML, CSS et JavaScript natifs, sans Bootstrap.
 - **Backend PHP** : code source dans `/api/`, hébergé séparément sur Plesk à la racine du domaine.
-- **Base de données** : SQLite par défaut (`storage/bookwriter.sqlite`).
-- **Google Drive** : OAuth 2.0 en lecture seule pour importer Google Docs, TXT et Markdown.
+- **Base de données** : SQLite (`storage/bookwriter.sqlite`).
+- **Authentification** : Google OAuth / OpenID Connect uniquement.
+- **Google Drive** : autorisation OAuth séparée en lecture seule pour importer Google Docs, TXT et Markdown.
 
-Le frontend GitHub Pages ne contient pas le backend. Il appelle l’API distante via `fetch()`.
+Le frontend GitHub Pages ne contient jamais le backend. Il appelle l’API distante via `fetch()`.
 
 ## Pages frontend
 
@@ -18,7 +19,8 @@ Le frontend GitHub Pages ne contient pas le backend. Il appelle l’API distante
 - `studio.html` — éditeur et gestion des livres
 - `import.html` — Google Drive et import local
 - `reader.html?slug=...` — lecture publique
-- `login.html` / `register.html` — authentification
+- `login.html` — connexion Google
+- `register.html` — création de compte Google (même flux OAuth)
 - `account.html` — profil et clés API
 - `developers.html` — documentation API
 
@@ -30,18 +32,12 @@ Base utilisée par le frontend :
 
 `https://condescending-driscoll.82-26-80-25.plesk.page`
 
-Exemples :
-
-- `GET https://condescending-driscoll.82-26-80-25.plesk.page/health`
-- `POST https://condescending-driscoll.82-26-80-25.plesk.page/auth/login`
-- `GET https://condescending-driscoll.82-26-80-25.plesk.page/public/books`
-- `POST https://condescending-driscoll.82-26-80-25.plesk.page/books`
-
 Routes principales :
 
 - `GET /health`
-- `POST /auth/register`
-- `POST /auth/login`
+- `GET /auth/google` — démarre la connexion Google
+- `GET /auth/google/callback` — callback Google de connexion
+- `POST /auth/google/exchange` — échange le code BookWriter temporaire contre un token Bearer
 - `POST /auth/logout`
 - `GET /auth/me`
 - `GET|POST /books`
@@ -57,16 +53,17 @@ Routes principales :
 - `GET /google/files`
 - `POST /google/import`
 
+`POST /auth/login` et `POST /auth/register` sont volontairement désactivés et renvoient HTTP 410 : BookWriter n’utilise plus de mot de passe local.
+
 ## Déploiement Plesk
 
-Le dossier `api/` est le **code source du backend** dans le repo. Pour l’hébergement Plesk, copie **le contenu de `api/` directement dans le document root** de `condescending-driscoll.82-26-80-25.plesk.page`.
-
-Exemple de document root Plesk :
+Copie **le contenu de `api/` directement dans le document root** de `condescending-driscoll.82-26-80-25.plesk.page`.
 
 ```text
 httpdocs/
 ├── index.php
 ├── init.php
+├── google-auth.php
 ├── google-connect-url.php
 ├── .htaccess
 └── storage/
@@ -74,22 +71,28 @@ httpdocs/
 
 Le dossier `storage/` doit être accessible en écriture par PHP. Le serveur doit avoir `PDO`, `pdo_sqlite` et `cURL` activés.
 
-Variables d’environnement recommandées (voir `api/.env.example`) :
+Variables d’environnement recommandées :
 
 ```env
 APP_URL=https://condescending-driscoll.82-26-80-25.plesk.page
 FRONTEND_URL=https://louisoff84.github.io/BookWriter
 CORS_ORIGINS=https://louisoff84.github.io
+ACCESS_TOKEN_TTL=604800
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 APP_DEBUG=0
 ```
 
-Le routeur PHP accepte les routes directement à la racine du domaine. L’ancien préfixe `/api/` reste compatible pour le callback OAuth existant si nécessaire.
+## Google Cloud OAuth
 
-Dans Google Cloud, l’URI OAuth actuellement compatible est :
+Crée un client OAuth **Web application** et ajoute ces deux URI de redirection autorisées :
 
-`https://condescending-driscoll.82-26-80-25.plesk.page/api/google/callback`
+```text
+https://condescending-driscoll.82-26-80-25.plesk.page/auth/google/callback
+https://condescending-driscoll.82-26-80-25.plesk.page/google/callback
+```
+
+La première sert à l’inscription/connexion BookWriter avec `openid profile email`. La seconde sert uniquement à l’autorisation Google Drive.
 
 ## GitHub Pages
 
