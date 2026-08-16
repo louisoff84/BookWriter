@@ -1,7 +1,8 @@
 Options -Indexes
 RewriteEngine On
 
-# Let real files pass, route every other /api/* request to index.php.
+# API servie directement à la racine du domaine Plesk.
+# Exemple: /auth/login, /books, /public/books, /google/callback
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
