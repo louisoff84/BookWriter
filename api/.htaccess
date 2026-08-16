@@ -9,9 +9,9 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
 
-<FilesMatch "^(init|google-auth)\.php$">
+<Files "init.php">
     Require all denied
-</FilesMatch>
+</Files>
 
 <FilesMatch "\.(sqlite|db|log)$">
     Require all denied
