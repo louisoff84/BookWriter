@@ -15,6 +15,7 @@ if ($method === 'OPTIONS') {
 
 $uriPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $path = trim($uriPath, '/');
+$action = defined('BW_GOOGLE_AUTH_ACTION') ? BW_GOOGLE_AUTH_ACTION : null;
 
 function bw_google_login_prepare_schema(): void
 {
@@ -52,7 +53,7 @@ SQL);
 
 function bw_google_login_redirect_uri(): string
 {
-    return bw_config()['app_url'] . '/auth/google/callback';
+    return bw_config()['app_url'] . '/google-auth-callback.php';
 }
 
 function bw_google_login_url(string $state): string
@@ -166,7 +167,7 @@ try {
         bw_error('Connexion par mot de passe désactivée. Utilise Google.', 410, ['code' => 'google_auth_required']);
     }
 
-    if ($method === 'GET' && $path === 'auth/google') {
+    if ($method === 'GET' && ($action === 'start' || $path === 'auth/google')) {
         if (!bw_google_ready()) {
             bw_error('Google OAuth n’est pas configuré sur le serveur.', 503);
         }
@@ -181,7 +182,7 @@ try {
         exit;
     }
 
-    if ($method === 'GET' && $path === 'auth/google/callback') {
+    if ($method === 'GET' && ($action === 'callback' || $path === 'auth/google/callback')) {
         $state = trim((string)($_GET['state'] ?? ''));
         if ($state === '') {
             bw_error('État OAuth Google manquant.', 400);
@@ -220,7 +221,7 @@ try {
         exit;
     }
 
-    if ($method === 'POST' && $path === 'auth/google/exchange') {
+    if ($method === 'POST' && ($action === 'exchange' || $path === 'auth/google/exchange')) {
         $body = bw_body();
         $code = trim((string)($body['code'] ?? ''));
         if (!str_starts_with($code, 'bwc_')) {
