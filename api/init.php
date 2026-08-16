@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-const BW_ROOT = __DIR__ . '/..';
+// The backend files are deployed directly in the Plesk document root.
+const BW_ROOT = __DIR__;
 const BW_STORAGE = BW_ROOT . '/storage';
 
 function bw_env(string $key, ?string $default = null): ?string
