@@ -1,0 +1,15 @@
+Options -Indexes
+RewriteEngine On
+
+# Let real files pass, route every other /api/* request to index.php.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+<Files "init.php">
+    Require all denied
+</Files>
+
+<FilesMatch "\.(sqlite|db|log)$">
+    Require all denied
+</FilesMatch>
