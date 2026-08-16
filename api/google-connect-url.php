@@ -24,9 +24,11 @@ $body = bw_body();
 $returnUrl = bw_frontend_return_url((string)($body['return_url'] ?? ''));
 $state = bw_create_oauth_state((int)$user['id'], $returnUrl);
 $config = bw_config();
+$redirectUri = rtrim((string)$config['app_url'], '/') . '/google-drive-callback.php';
+
 $query = http_build_query([
     'client_id' => $config['google_client_id'],
-    'redirect_uri' => bw_google_redirect_uri(),
+    'redirect_uri' => $redirectUri,
     'response_type' => 'code',
     'scope' => 'https://www.googleapis.com/auth/drive.readonly',
     'access_type' => 'offline',
