@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090b12"><meta name="description" content="Écrivez et gérez vos livres BookWriter."><title>Studio — BookWriter</title><link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="studio">
+<header class="topbar"><a class="brand" href="index.html"><span class="brand-mark">B</span><span>BookWriter</span></a><nav class="nav" id="main-nav" aria-label="Navigation principale"><a href="index.html">Accueil</a><a href="explore.html">Explorer</a><a href="studio.html" class="active">Studio</a><a href="import.html">Import</a><a href="developers.html">API</a></nav><div class="top-actions"><button class="icon-button" id="theme-toggle" aria-label="Changer de thème">◐</button><span class="auth-state"></span><a class="button button-primary" href="studio.html">Écrire</a><button class="mobile-menu" id="mobile-menu" aria-label="Ouvrir le menu">☰</button></div></header>
+<main><section class="studio-layout">
+  <aside class="studio-sidebar">
+    <div class="studio-sidebar-head"><div><span class="section-kicker">STUDIO</span><h2>Mes livres</h2></div><button class="square-button" id="new-book" title="Nouveau livre">+</button></div>
+    <p style="color:var(--muted);font-size:12px">Connecté en tant que <strong id="studio-user"></strong></p>
+    <div class="studio-stats"><div><strong id="draft-count">0</strong><span>Brouillons</span></div><div><strong id="published-count">0</strong><span>Publiés</span></div></div>
+    <div class="book-list" id="studio-book-list"></div><div style="margin-top:22px"><a class="button button-soft full small" href="import.html">Importer un manuscrit</a></div>
+  </aside>
+  <div class="studio-editor">
+    <div class="editor-empty" id="editor-empty"><div><div class="empty-orbit" style="margin:auto">✎</div><h2>Commencez une nouvelle histoire</h2><p>Créez un livre ou sélectionnez un brouillon.</p><button class="button button-primary" id="new-book-empty">Nouveau livre</button></div></div>
+    <div class="editor-workspace hidden" id="editor-workspace">
+      <div class="editor-toolbar"><div class="status-pill" id="editor-status">● Brouillon</div><div class="editor-actions"><span class="save-indicator" id="save-indicator">Sauvegarde automatique</span><a class="button button-ghost small hidden" id="share-book" target="_blank" rel="noopener">Voir la page publique</a><button class="button button-danger small" id="delete-book">Supprimer</button><button class="button button-primary small" id="publish-book">Publier</button></div></div>
+      <div class="editor-sheet">
+        <label class="sr-only" for="edit-title">Titre</label><input class="title-input" id="edit-title" maxlength="150" placeholder="Titre de votre livre">
+        <label class="sr-only" for="edit-description">Description</label><textarea class="description-input" id="edit-description" rows="2" maxlength="1000" placeholder="Une courte description…"></textarea>
+        <div class="editor-meta"><select id="edit-category" aria-label="Catégorie"><option value="fiction">Fiction</option><option value="fantasy">Fantasy</option><option value="science-fiction">Science-fiction</option><option value="romance">Romance</option><option value="thriller">Thriller</option><option value="poetry">Poésie</option><option value="non-fiction">Non-fiction</option><option value="other">Autre</option></select><span id="word-count">0 mot</span><span id="read-time">1 min de lecture</span></div>
+        <div class="cover-input-wrap"><div class="form-field"><label for="edit-cover">URL de couverture (optionnel)</label><input class="form-control" id="edit-cover" type="url" placeholder="https://…"></div></div>
+        <label class="sr-only" for="edit-content">Contenu du livre</label><textarea class="content-editor" id="edit-content" spellcheck="true" placeholder="Il était une fois…"></textarea>
+      </div>
+    </div>
+  </div>
+</section></main>
+<footer class="footer"><div class="shell footer-inner"><a class="brand" href="index.html"><span class="brand-mark">B</span><span>BookWriter</span></a><p>Écrire, publier et partager simplement.</p><div><a href="explore.html">Bibliothèque</a><a href="developers.html">API</a><a href="https://github.com/louisoff84/BookWriter" target="_blank" rel="noreferrer">GitHub</a></div></div></footer><div id="toast-stack" class="toast-stack" aria-live="polite"></div><script src="assets/config.js"></script><script src="assets/app.js"></script>
+</body></html>
