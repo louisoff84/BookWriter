@@ -22,7 +22,13 @@ if (!bw_google_ready()) {
 $user = bw_require_user();
 $body = bw_body();
 $returnUrl = bw_frontend_return_url((string)($body['return_url'] ?? ''));
-$state = bw_create_oauth_state((int)$user['id'], $returnUrl);
+$state = bin2hex(random_bytes(32));
+$stateHash = hash('sha256', $state);
+
+bw_db()->prepare('DELETE FROM oauth_states WHERE expires_at < ?')->execute([time()]);
+bw_db()->prepare('INSERT INTO oauth_states (state_hash, user_id, return_url, expires_at) VALUES (?, ?, ?, ?)')
+    ->execute([$stateHash, (int)$user['id'], $returnUrl, time() + 600]);
+
 $config = bw_config();
 $redirectUri = rtrim((string)$config['app_url'], '/') . '/google-drive-callback.php';
 
