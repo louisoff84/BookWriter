@@ -5,14 +5,15 @@ RewriteEngine On
 RewriteRule ^auth/(google(?:/.*)?|login|register)$ google-auth.php [QSA,L]
 
 # API served directly at the Plesk domain root.
+# Route through router.php so .env is loaded before index.php.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ index.php [QSA,L]
+RewriteRule ^ router.php [QSA,L]
 
-<Files "init.php">
+<FilesMatch "^(init|env-loader|router)\.php$">
     Require all denied
-</Files>
+</FilesMatch>
 
-<FilesMatch "\.(sqlite|db|log)$">
+<FilesMatch "^(\.env|.*\.(sqlite|db|log))$">
     Require all denied
 </FilesMatch>
