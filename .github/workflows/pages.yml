@@ -34,8 +34,10 @@ jobs:
           cp index.html dist/index.html
           cp -R assets dist/assets
           touch dist/.nojekyll
-      - name: Configure Pages
+      - name: Configure and enable Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Upload frontend only
         uses: actions/upload-pages-artifact@v3
         with:
