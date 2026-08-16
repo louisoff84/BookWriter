@@ -1,15 +1,17 @@
 Options -Indexes
 RewriteEngine On
 
-# API servie directement à la racine du domaine Plesk.
-# Exemple: /auth/login, /books, /public/books, /google/callback
+# Google authentication replaces password login/register.
+RewriteRule ^auth/(google(?:/.*)?|login|register)$ google-auth.php [QSA,L]
+
+# API served directly at the Plesk domain root.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
 
-<Files "init.php">
+<FilesMatch "^(init|google-auth)\.php$">
     Require all denied
-</Files>
+</FilesMatch>
 
 <FilesMatch "\.(sqlite|db|log)$">
     Require all denied
