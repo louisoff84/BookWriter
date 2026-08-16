@@ -8,28 +8,17 @@ const BW_STORAGE = BW_ROOT . '/storage';
 function bw_env(string $key, ?string $default = null): ?string
 {
     $value = getenv($key);
-    return $value === false || trim((string)$value) === '' ? $default : trim((string)$value);
+    return $value === false || $value === '' ? $default : $value;
 }
 
 function bw_lower(string $value): string
 {
-    return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+    return function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
 }
 
 function bw_strlen(string $value): int
 {
-    return function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
-}
-
-function bw_substr(string $value, int $start, ?int $length = null): string
-{
-    if (function_exists('mb_substr')) {
-        return $length === null
-            ? mb_substr($value, $start, null, 'UTF-8')
-            : mb_substr($value, $start, $length, 'UTF-8');
-    }
-
-    return $length === null ? substr($value, $start) : substr($value, $start, $length);
+    return function_exists('mb_strlen') ? mb_strlen($value) : strlen($value);
 }
 
 function bw_base_url(): string
@@ -53,20 +42,15 @@ function bw_config(): array
         return $config;
     }
 
-    $frontend = rtrim((string)bw_env('FRONTEND_URL', 'https://louisoff84.github.io/BookWriter'), '/');
-    $origins = array_filter(array_map('trim', explode(',', (string)bw_env(
-        'CORS_ORIGINS',
-        'https://louisoff84.github.io,http://localhost:5500,http://127.0.0.1:5500'
-    ))));
-
     $config = [
         'app_name' => bw_env('APP_NAME', 'BookWriter'),
         'app_url' => bw_base_url(),
-        'frontend_url' => $frontend,
-        'cors_origins' => array_values(array_unique($origins)),
+        'frontend_url' => rtrim((string)bw_env('FRONTEND_URL', 'https://louisoff84.github.io/BookWriter'), '/'),
         'google_client_id' => bw_env('GOOGLE_CLIENT_ID', ''),
         'google_client_secret' => bw_env('GOOGLE_CLIENT_SECRET', ''),
+        'cors_origins' => array_values(array_filter(array_map('trim', explode(',', (string)bw_env('CORS_ORIGINS', 'https://louisoff84.github.io'))))),
         'access_token_ttl' => max(3600, (int)bw_env('ACCESS_TOKEN_TTL', '604800')),
+        'debug' => bw_env('APP_DEBUG', '0') === '1',
     ];
 
     return $config;
@@ -76,16 +60,14 @@ function bw_apply_cors(): void
 {
     $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
     $allowed = bw_config()['cors_origins'];
-
     if ($origin !== '' && in_array($origin, $allowed, true)) {
         header('Access-Control-Allow-Origin: ' . $origin);
-        header('Access-Control-Allow-Credentials: true');
         header('Vary: Origin');
     }
-
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
     header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
     header('Access-Control-Max-Age: 86400');
+    header('X-Content-Type-Options: nosniff');
 }
 
 function bw_boot_session(): void
@@ -101,7 +83,7 @@ function bw_boot_session(): void
         'path' => '/',
         'secure' => $secure,
         'httponly' => true,
-        'samesite' => $secure ? 'None' : 'Lax',
+        'samesite' => 'Lax',
     ]);
     session_start();
 }
@@ -113,8 +95,8 @@ function bw_db(): PDO
         return $pdo;
     }
 
-    if (!is_dir(BW_STORAGE) && !mkdir(BW_STORAGE, 0775, true) && !is_dir(BW_STORAGE)) {
-        throw new RuntimeException('Impossible de créer le dossier storage.');
+    if (!is_dir(BW_STORAGE)) {
+        mkdir(BW_STORAGE, 0775, true);
     }
 
     $dbPath = BW_STORAGE . '/bookwriter.sqlite';
@@ -125,10 +107,20 @@ function bw_db(): PDO
     ]);
     $pdo->exec('PRAGMA foreign_keys = ON');
     $pdo->exec('PRAGMA busy_timeout = 5000');
-    $pdo->exec('PRAGMA journal_mode = WAL');
 
     bw_init_schema($pdo);
     return $pdo;
+}
+
+function bw_column_exists(PDO $pdo, string $table, string $column): bool
+{
+    $stmt = $pdo->query('PRAGMA table_info(' . $table . ')');
+    foreach ($stmt->fetchAll() as $row) {
+        if (($row['name'] ?? '') === $column) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function bw_init_schema(PDO $pdo): void
@@ -188,12 +180,10 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
 );
 
 CREATE TABLE IF NOT EXISTS oauth_states (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    state_hash TEXT NOT NULL UNIQUE,
+    state_hash TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
     return_url TEXT NOT NULL,
     expires_at INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -203,18 +193,14 @@ CREATE INDEX IF NOT EXISTS idx_books_category ON books(category);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
-CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);
 SQL);
 
-    $columns = $pdo->query('PRAGMA table_info(books)')->fetchAll();
-    $columnNames = array_column($columns, 'name');
-    if (!in_array('category', $columnNames, true)) {
+    if (!bw_column_exists($pdo, 'books', 'category')) {
         $pdo->exec("ALTER TABLE books ADD COLUMN category TEXT NOT NULL DEFAULT 'other'");
-        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_books_category ON books(category)');
     }
 
-    $pdo->prepare('DELETE FROM auth_tokens WHERE expires_at <= ?')->execute([time()]);
-    $pdo->prepare('DELETE FROM oauth_states WHERE expires_at <= ?')->execute([time()]);
+    $pdo->prepare('DELETE FROM auth_tokens WHERE expires_at < ?')->execute([time()]);
+    $pdo->prepare('DELETE FROM oauth_states WHERE expires_at < ?')->execute([time()]);
     $initialized = true;
 }
 
@@ -227,7 +213,6 @@ function bw_json(array $payload, int $status = 200): never
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-store');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
 }
@@ -273,7 +258,7 @@ function bw_bearer_token(): ?string
         $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
     }
 
-    if (preg_match('/^Bearer\s+(.+)$/i', trim((string)$header), $matches)) {
+    if (preg_match('/^Bearer\s+(.+)$/i', trim($header), $matches)) {
         return trim($matches[1]);
     }
     return null;
@@ -281,22 +266,20 @@ function bw_bearer_token(): ?string
 
 function bw_user_from_token(string $token): ?array
 {
-    if ($token === '') {
-        return null;
-    }
-
     $pdo = bw_db();
     $hash = hash('sha256', $token);
 
-    $stmt = $pdo->prepare(
-        'SELECT u.* FROM users u JOIN auth_tokens t ON t.user_id = u.id
-         WHERE t.token_hash = ? AND t.expires_at > ? LIMIT 1'
-    );
-    $stmt->execute([$hash, time()]);
-    $user = $stmt->fetch();
-    if ($user) {
-        $pdo->prepare('UPDATE auth_tokens SET last_used_at = ? WHERE token_hash = ?')->execute([bw_now(), $hash]);
-        return $user;
+    if (str_starts_with($token, 'bwa_')) {
+        $stmt = $pdo->prepare(
+            'SELECT u.* FROM users u JOIN auth_tokens t ON t.user_id = u.id WHERE t.token_hash = ? AND t.expires_at > ? LIMIT 1'
+        );
+        $stmt->execute([$hash, time()]);
+        $user = $stmt->fetch();
+        if ($user) {
+            $pdo->prepare('UPDATE auth_tokens SET last_used_at = ? WHERE token_hash = ?')->execute([bw_now(), $hash]);
+            return $user;
+        }
+        return null;
     }
 
     $stmt = $pdo->prepare(
@@ -482,7 +465,7 @@ function bw_google_ready(): bool
 
 function bw_google_redirect_uri(): string
 {
-    return bw_config()['app_url'] . '/api/google/callback';
+    return bw_config()['app_url'] . '/google/callback';
 }
 
 function bw_google_access_token(array $user): string
@@ -558,37 +541,3 @@ function bw_frontend_return_url(?string $requested): string
     }
     return $requested;
 }
-
-function bw_create_oauth_state(int $userId, string $returnUrl): string
-{
-    $state = bin2hex(random_bytes(32));
-    bw_db()->prepare(
-        'INSERT INTO oauth_states (state_hash, user_id, return_url, expires_at, created_at) VALUES (?, ?, ?, ?, ?)'
-    )->execute([hash('sha256', $state), $userId, $returnUrl, time() + 600, bw_now()]);
-    return $state;
-}
-
-function bw_consume_oauth_state(string $state): ?array
-{
-    if ($state === '') {
-        return null;
-    }
-
-    $hash = hash('sha256', $state);
-    $stmt = bw_db()->prepare(
-        'SELECT s.*, u.*, s.id AS oauth_state_id, s.user_id AS oauth_user_id
-         FROM oauth_states s JOIN users u ON u.id = s.user_id
-         WHERE s.state_hash = ? AND s.expires_at > ? LIMIT 1'
-    );
-    $stmt->execute([$hash, time()]);
-    $row = $stmt->fetch();
-    if (!$row) {
-        return null;
-    }
-
-    bw_db()->prepare('DELETE FROM oauth_states WHERE id = ?')->execute([(int)$row['oauth_state_id']]);
-    return $row;
-}
-
-header('X-Content-Type-Options: nosniff');
-header('Referrer-Policy: no-referrer');
